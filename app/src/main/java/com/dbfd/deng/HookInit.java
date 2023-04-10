@@ -32,7 +32,7 @@ import de.robv.android.xposed.callbacks.XC_InitPackageResources;
 import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
 public class HookInit implements IXposedHookLoadPackage, IXposedHookZygoteInit, IXposedHookInitPackageResources {
-    private static final List<String> hookPackages = Arrays.asList("org.telegram.messenger", "org.telegram.messenger.web", "org.telegram.messenger.beta");
+    private static final List<String> hookPackages = Arrays.asList("org.telegram.messenger", "org.telegram.messenger.web", "org.telegram.messenger.beta","xyz.nextalone.nnngram");
     private static String MODULE_PATH = null;
     private int mMsg_repeat = 0;
     private boolean isHookGIFADD = false;
@@ -67,11 +67,10 @@ public class HookInit implements IXposedHookLoadPackage, IXposedHookZygoteInit, 
             /**
              * HOOK禁止群截图
              */
-            XposedHelpers.findAndHookMethod("org.telegram.messenger.AndroidUtilities", lpparam.classLoader, "updateFlagSecure", Window.class, new XC_MethodHook() {
+            XposedHelpers.findAndHookMethod("org.telegram.messenger.FlagSecureReason", lpparam.classLoader, "isSecuredNow", Window.class, new XC_MethodHook() {
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                    Window window = (Window) param.args[0];
-                    window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
+                    param.setResult(false);
                 }
             });
 
@@ -94,17 +93,6 @@ public class HookInit implements IXposedHookLoadPackage, IXposedHookZygoteInit, 
                     }
                 }
             });
-            XposedHelpers.findAndHookMethod("org.telegram.ui.Cells.ChatActionCell", lpparam.classLoader, "getMessageObject", new XC_MethodHook() {
-
-                @Override
-                protected void afterHookedMethod(MethodHookParam param) throws Throwable {
-                    super.afterHookedMethod(param);
-                    Object ts = param.thisObject;
-                    Object currentMessageObject = XposedHelpers.getObjectField(ts, "currentMessageObject");
-                    XposedHelpers.setBooleanField(XposedHelpers.getObjectField(currentMessageObject, "messageOwner"), "noforwards", false);
-                    param.setResult(currentMessageObject);
-                }
-            });
             Class TLRPC_Chat = lpparam.classLoader.loadClass("org.telegram.tgnet.TLRPC$Chat");
             XposedHelpers.findAndHookMethod("org.telegram.messenger.MessagesController", lpparam.classLoader, "isChatNoForwards", TLRPC_Chat, XC_MethodReplacement.returnConstant(false));
             /**
@@ -113,41 +101,27 @@ public class HookInit implements IXposedHookLoadPackage, IXposedHookZygoteInit, 
             XposedHelpers.findAndHookMethod("org.telegram.messenger.MessagesController", lpparam.classLoader, "processUpdateArray", ArrayList.class, ArrayList.class, ArrayList.class, boolean.class, int.class, new XC_MethodHook() {
                 @Override
                 protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+
                     Class TL_updateDeleteChannelMessages = lpparam.classLoader.loadClass("org.telegram.tgnet.TLRPC$TL_updateDeleteChannelMessages");
+                    Class TL_updateDeleteMessages = lpparam.classLoader.loadClass("org.telegram.tgnet.TLRPC$TL_updateDeleteMessages");
                     ArrayList<Object> messgeArr = (ArrayList<Object>) param.args[0];
+                    ArrayList<Object> newMessgeArr = new ArrayList<>();
                     for (Object item : messgeArr) {
-//                        XposedBridge.log("------消息类型" + item.getClass());
-                        if (item.getClass().equals(TL_updateDeleteChannelMessages)) {
-//                            Object ts= param.thisObject;
-//                            Object dialogMessage=XposedHelpers.getObjectField(ts, "dialogMessage");
-//                            Object oo=XposedHelpers.callMethod(dialogMessage, "get",(-((long)XposedHelpers.getObjectField(item, "channel_id"))));
-//                            XposedHelpers.setObjectField(oo, "messageText",XposedHelpers.getObjectField(oo, "messageText")+"测试");
-//                            XposedHelpers.callMethod(dialogMessage, "put",(-((long)XposedHelpers.getObjectField(item, "channel_id"))),oo);
-                            messgeArr.remove(item);
+                        if (!item.getClass().equals(TL_updateDeleteChannelMessages) &&!item.getClass().equals(TL_updateDeleteMessages)) {
+                            newMessgeArr.add(item);
                         }
                     }
-                    param.args[0] = messgeArr;
+                    param.args[0] = newMessgeArr;
                 }
             });
-//            XposedHelpers.findAndHookMethod("org.telegram.messenger.MessagesStorage", lpparam.classLoader, "markMessagesAsDeletedInternal",long.class,ArrayList.class,boolean.class,boolean.class,new XC_MethodHook() {
-//                @Override
-//                protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-//                    Object ts= param.thisObject;
-//                    param.args[0]=0;
-//                    param.args[1]=null;
-//                    param.args[2]=false;
-//                    param.args[3]=false;
-//                }
-//            });
-//            XposedHelpers.findAndHookMethod("org.telegram.messenger.MessagesStorage", lpparam.classLoader, "markMessagesAsDeletedInternal",long.class,int.class,boolean.class,new XC_MethodHook() {
-//                @Override
-//                protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-//                    Object ts= param.thisObject;
-//                    param.args[0]=0;
-//                    param.args[1]=0;
-//                    param.args[2]=false;
-//                }
-//            });
+
+            /**
+             *本地会员
+             */
+            XposedHelpers.findAndHookMethod("org.telegram.messenger.UserConfig", lpparam.classLoader, "isPremium", XC_MethodReplacement.returnConstant(true));
+            /***
+             * 复读部分
+             */
             XposedHelpers.findAndHookMethod("org.telegram.ui.ChatActivity", lpparam.classLoader, "createMenu", View.class, boolean.class, boolean.class, float.class, float.class, boolean.class, new XC_MethodHook() {
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) throws Throwable {
@@ -188,7 +162,7 @@ public class HookInit implements IXposedHookLoadPackage, IXposedHookZygoteInit, 
                     //消息分类处理
                     sendMessge(selectedObject, (View) newInstance);//处理消息
                     //拦截复读GIF的时候一直添加历史记录
-                    XposedHelpers.findAndHookMethod("org.telegram.messenger.MediaDataController", lpparam.classLoader, "addRecentGif", TLRPC_Document, int.class, new XC_MethodHook() {
+                    XposedHelpers.findAndHookMethod("org.telegram.messenger.MediaDataController", lpparam.classLoader, "addRecentGif", TLRPC_Document, int.class,boolean.class, new XC_MethodHook() {
                         @Override
                         protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                             if (isHookGIFADD) {
@@ -221,12 +195,14 @@ public class HookInit implements IXposedHookLoadPackage, IXposedHookZygoteInit, 
         int selectedType = XposedHelpers.getIntField(selectedObject, "type");//消息类型
         String path = "132";//图片和GIF的路径
         Object chatActivityEnterObject = chatActivityEnterViewField.get(thisObj);
+//        Class Floser= XposedHelpers.callMethod(FileLoader,"getFileLoader",XposedHelpers.getObjectField(thisObj,"currentAccount")).getClass();
+        Object Floser= XposedHelpers.callMethod(thisObj,"getFileLoader");
         ArrayList<Object> entries = new ArrayList<>();//图片AndGIF
-//        XposedBridge.log("------消息类型" + selectedType);
+        XposedBridge.log("------消息类型" + selectedType);
         if (selectedType == 1) {
             Object currentPhotoObject = XposedHelpers.callStaticMethod(FileLoader, "getClosestPhotoSizeWithSize", XposedHelpers.getObjectField(selectedObject, "photoThumbs"), XposedHelpers.callStaticMethod(AndroidUtilities, "getPhotoSize"));
             if (currentPhotoObject != null) {
-                File file = (File) XposedHelpers.callStaticMethod(FileLoader, "getPathToMessage", XposedHelpers.getObjectField(selectedObject, "messageOwner"));
+                File file = (File) XposedHelpers.callMethod(Floser, "getPathToMessage", XposedHelpers.getObjectField(selectedObject, "messageOwner"));
                 path = file.getPath();
             }
             Object entry = photoEntryCt.newInstance(0, 0, 0, path, 0, false, 0, 0, 0);
@@ -234,15 +210,18 @@ public class HookInit implements IXposedHookLoadPackage, IXposedHookZygoteInit, 
 
         }
         if (selectedType == 8) {
-            //拦截复读GIF保存到历史消息
-            path = XposedHelpers.callStaticMethod(FileLoader, "getPathToMessage", XposedHelpers.getObjectField(selectedObject, "messageOwner")).toString();
+            path =XposedHelpers.getObjectField(XposedHelpers.getObjectField(selectedObject, "messageOwner"), "attachPath").toString();
+            if(path.length()<1){
+                path = XposedHelpers.callMethod(Floser, "getPathToMessage", XposedHelpers.getObjectField(selectedObject, "messageOwner")).toString();
+            }
+
             String[] token = path.split("\\.");
             String pf = token[1];
             if (pf.equals("MOV")) {
                 renameFile(path, token[0] + ".mp4");
                 path = token[0] + ".mp4";
-//                XposedBridge.log("------path" + path);
             }
+
             Object entry = photoEntryCt.newInstance(0, 0, 0, path, 0, false, 0, 0, 0);
             entries.add(0, entry);
         }
@@ -262,8 +241,10 @@ public class HookInit implements IXposedHookLoadPackage, IXposedHookZygoteInit, 
                     case 13:
                     case 15:
                         if (XposedHelpers.getObjectField(XposedHelpers.getObjectField(selectedObject, "messageOwner"), "media") != null) {
+
                             XposedHelpers.callMethod(chatActivityEnterObject, "onStickerSelected", XposedHelpers.getObjectField(XposedHelpers.getObjectField(XposedHelpers.getObjectField(selectedObject, "messageOwner"), "media"), "document"), null, null, null, true, true, 0);
                         }
+
                         XposedHelpers.callMethod(chatActivityEnterObject, "onStickerSelected", XposedHelpers.getObjectField(selectedObject, "emojiAnimatedSticker"), null, null, null, true, true, 0);
                         break;
                 }
@@ -273,11 +254,6 @@ public class HookInit implements IXposedHookLoadPackage, IXposedHookZygoteInit, 
     }
 
     public static void renameFile(String fromFile, String newPath) {
-//        File oleFile = new File(oldPath);
-//        File newFile = new File(newPath);
-//        //执行重命名
-//        oleFile.renameTo(newFile);
-
         try
         {
             InputStream fosfrom = new FileInputStream(fromFile);
